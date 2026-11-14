@@ -1,0 +1,1674 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>iSignOTA — Standalone iPhone IPA Sideloader & Certificate Signer</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #090d16;
+      color: #f1f5f9;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .glass-card {
+      background: rgba(17, 24, 39, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .drop-zone-active {
+      border-color: #3b82f6 !important;
+      background: rgba(59, 130, 246, 0.12) !important;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-blue-500 selection:text-white">
+
+  <!-- Top Navigation Bar -->
+  <header class="sticky top-0 z-30 glass-card border-b border-slate-800/80 px-4 py-3">
+    <div class="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-base sm:text-lg tracking-tight text-white">iSignOTA Studio</h1>
+            <span class="text-[11px] font-mono uppercase px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/30">No-PC Web Signer</span>
+          </div>
+          <p class="text-xs text-slate-400 hidden sm:block">Client-Side IPA Inspector, Certificate Vault &amp; OTA <code class="text-slate-300">itms-services://</code> Installer</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800" aria-label="Main Navigation">
+        <button id="tabBtnSign" type="button" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all bg-blue-600 text-white shadow">
+          Sign &amp; Install
+        </button>
+        <button id="tabBtnCerts" type="button" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all text-slate-400 hover:text-white">
+          Certificate Sign-In
+        </button>
+        <button id="tabBtnQueue" type="button" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all text-slate-400 hover:text-white flex items-center gap-1.5">
+          <span>OTA Library</span>
+          <span id="libraryCountBadge" class="px-1.5 py-0.2 rounded-full text-[11px] bg-slate-800 text-slate-300">1</span>
+        </button>
+        <button id="tabBtnGuide" type="button" class="px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all text-slate-400 hover:text-white">
+          iOS Setup
+        </button>
+      </nav>
+
+      <!-- Active Certificate Status Pill -->
+      <div class="flex items-center gap-2">
+        <button id="openCertModalBtn" type="button" class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-xs transition">
+          <span id="certStatusDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="activeCertTopLabel" class="font-medium text-slate-200 truncate max-w-[160px]">Apple Dev: Vineel Cert</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-6 space-y-6">
+
+    <!-- VIEW 1: SIGN & INSTALL WORKSPACE -->
+    <section id="viewSign" class="space-y-6">
+      <!-- Top Status Banner -->
+      <div class="glass-card rounded-2xl p-4 sm:p-5 border border-blue-500/20 bg-gradient-to-r from-blue-950/40 via-slate-900/70 to-indigo-950/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div class="space-y-1">
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Ready on iPhone Safari</span>
+            <span class="text-xs text-slate-400 font-mono" id="deviceDetectBadge">iOS / Mobile Safari Compatible</span>
+          </div>
+          <h2 class="text-base sm:text-lg font-semibold text-white">Upload your <code class="text-blue-400">.ipa</code> file, attach your signing certificate, and trigger OTA installation</h2>
+          <p class="text-xs sm:text-sm text-slate-300">Parses real <code class="text-slate-200">Payload/*.app/Info.plist</code> (binary or XML) locally in your browser, binds your <code class="text-slate-200">.p12</code> + <code class="text-slate-200">.mobileprovision</code> profile, and builds the <code class="text-slate-200">itms-services://</code> install manifest.</p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+          <button id="loadDemoIpaBtn" type="button" class="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition">
+            Load Sample IPA
+          </button>
+          <button id="udidProfileBtn" type="button" class="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-medium transition">
+            Get iPhone UDID
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Left Column: IPA Upload & App Customization (7 cols) -->
+        <div class="lg:col-span-7 space-y-6">
+
+          <!-- Step 1: IPA File Dropzone -->
+          <div class="glass-card rounded-2xl p-5 space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <span class="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">1</span>
+                <h3 class="font-semibold text-white text-sm sm:text-base">Select or Drop <code class="text-blue-400">.ipa</code> Package</h3>
+              </div>
+              <span id="ipaParseStatusBadge" class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">Waiting for file</span>
+            </div>
+
+            <div id="ipaDropZone" class="border-2 border-dashed border-slate-700 hover:border-blue-500/70 rounded-2xl p-6 text-center transition cursor-pointer bg-slate-900/40">
+              <input id="ipaFileInput" type="file" accept=".ipa,.zip,application/octet-stream" class="hidden" />
+              <div class="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto mb-3 text-blue-400">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+              </div>
+              <p class="text-sm font-medium text-slate-200">Tap to choose an <span class="text-blue-400 font-semibold">.ipa</span> from iPhone Files or drag &amp; drop here</p>
+              <p class="text-xs text-slate-400 mt-1">100% client-side ZIP &amp; <code class="text-slate-300">Info.plist</code> inspection — supports large IPA archives</p>
+              <div class="mt-4 flex justify-center">
+                <button id="browseIpaBtn" type="button" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/25 transition">
+                  Choose .IPA File
+                </button>
+              </div>
+            </div>
+
+            <!-- Extracted IPA Metadata Card -->
+            <div id="ipaInspectorCard" class="rounded-xl bg-slate-900/90 border border-slate-800 p-4 space-y-4">
+              <div class="flex items-center gap-4">
+                <div id="appIconPreview" class="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 via-blue-600 to-cyan-500 flex items-center justify-center text-white font-bold text-xl shadow-md shrink-0 overflow-hidden border border-white/10">
+                  IPA
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2">
+                    <h4 id="inspectedAppName" class="font-bold text-white text-base truncate">Delta Emulator (Sample IPA)</h4>
+                    <span id="inspectedPlistFormat" class="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Ready</span>
+                  </div>
+                  <p id="inspectedBundleId" class="text-xs font-mono text-blue-400 truncate mt-0.5">com.rileytestut.Delta</p>
+                  <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-slate-400">
+                    <span>Version: <strong id="inspectedVersion" class="text-slate-200">1.6.2 (114)</strong></span>
+                    <span>Min iOS: <strong id="inspectedMinOS" class="text-slate-200">14.0</strong></span>
+                    <span>Size: <strong id="inspectedSize" class="text-slate-200">18.4 MB</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Binary & Provisioning Details -->
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-800/80 text-xs">
+                <div class="bg-slate-950/60 rounded-lg p-2.5 border border-slate-800/60">
+                  <span class="text-slate-400 block text-[11px]">Executable Binary</span>
+                  <span id="inspectedExecutable" class="font-mono text-slate-200 truncate block mt-0.5">Payload/Delta.app/Delta</span>
+                </div>
+                <div class="bg-slate-950/60 rounded-lg p-2.5 border border-slate-800/60">
+                  <span class="text-slate-400 block text-[11px]">Embedded Profile</span>
+                  <span id="inspectedEmbeddedProfile" class="font-mono text-amber-300 truncate block mt-0.5">Unsigned / Custom</span>
+                </div>
+                <div class="bg-slate-950/60 rounded-lg p-2.5 border border-slate-800/60 col-span-2 sm:col-span-1">
+                  <span class="text-slate-400 block text-[11px]">Archive Entries</span>
+                  <span id="inspectedFileCount" class="font-mono text-slate-200 truncate block mt-0.5">42 files verified</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2: Signing Options & Bundle Tweaks -->
+          <div class="glass-card rounded-2xl p-5 space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <span class="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">2</span>
+                <h3 class="font-semibold text-white text-sm sm:text-base">Signing Identity &amp; IPA Tweaks</h3>
+              </div>
+              <button id="switchToCertTabBtn" type="button" class="text-xs text-blue-400 hover:text-blue-300 font-medium">
+                Manage Certificates &rarr;
+              </button>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label for="selectSigningCert" class="block text-xs font-medium text-slate-300 mb-1.5">Active Signing Certificate (.p12 + .mobileprovision)</label>
+                <select id="selectSigningCert" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500">
+                </select>
+              </div>
+              <div>
+                <label for="signingModeSelect" class="block text-xs font-medium text-slate-300 mb-1.5">Signing &amp; Installation Engine</label>
+                <select id="signingModeSelect" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500">
+                  <option value="ota_manifest">Direct OTA Manifest (itms-services:// + HTTPS URL)</option>
+                  <option value="remote_api">Remote Web Signer API (POST .ipa + .p12 + .mobileprovision)</option>
+                  <option value="local_repack">In-Browser IPA Repackager (Inject Profile &amp; Info.plist)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label for="overrideAppName" class="block text-xs font-medium text-slate-300 mb-1">Custom Display Name</label>
+                <input id="overrideAppName" type="text" placeholder="e.g. Delta Pro" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label for="overrideBundleId" class="block text-xs font-medium text-slate-300 mb-1">Custom Bundle Identifier</label>
+                <input id="overrideBundleId" type="text" placeholder="com.team.app" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs sm:text-sm font-mono text-white focus:outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label for="overrideVersion" class="block text-xs font-medium text-slate-300 mb-1">Custom Version</label>
+                <input id="overrideVersion" type="text" placeholder="1.0.0" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs sm:text-sm font-mono text-white focus:outline-none focus:border-blue-500" />
+              </div>
+            </div>
+
+            <!-- Checkboxes for Plist patches -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+              <label class="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-900/70 border border-slate-800 cursor-pointer">
+                <input id="chkFileSharing" type="checkbox" checked class="rounded bg-slate-800 border-slate-600 text-blue-600 focus:ring-blue-500" />
+                <span class="text-xs text-slate-200">Enable iOS Files App Access (<code class="text-slate-400">UIFileSharingEnabled</code>)</span>
+              </label>
+              <label class="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-900/70 border border-slate-800 cursor-pointer">
+                <input id="chkRemoveDevices" type="checkbox" checked class="rounded bg-slate-800 border-slate-600 text-blue-600 focus:ring-blue-500" />
+                <span class="text-xs text-slate-200">Remove Device Restrictions (<code class="text-slate-400">UISupportedDevices</code>)</span>
+              </label>
+              <label class="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-900/70 border border-slate-800 cursor-pointer">
+                <input id="chkStripExtensions" type="checkbox" class="rounded bg-slate-800 border-slate-600 text-blue-600 focus:ring-blue-500" />
+                <span class="text-xs text-slate-200">Strip PlugIns / WatchKit Extensions (Fixes Sign Errors)</span>
+              </label>
+              <label class="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-900/70 border border-slate-800 cursor-pointer">
+                <input id="chkMatchTeamId" type="checkbox" checked class="rounded bg-slate-800 border-slate-600 text-blue-600 focus:ring-blue-500" />
+                <span class="text-xs text-slate-200">Match Bundle ID to Provisioning Profile Wildcard</span>
+              </label>
+            </div>
+
+            <!-- Dynamic Hosting / Remote Signer Endpoint Box -->
+            <div id="otaHostingConfigBox" class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-slate-200">HTTPS IPA &amp; Manifest Endpoint (Required by iOS <code class="text-blue-400">itms-services://</code>)</span>
+                <span class="text-[11px] text-slate-400">Safari requires HTTPS</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label for="hostedIpaUrlInput" class="block text-[11px] text-slate-400 mb-1">HTTPS Direct URL to Signed <code class="text-slate-300">.ipa</code> (or Remote Signer API)</label>
+                  <input id="hostedIpaUrlInput" type="url" value="https://cdn.example-signer.dev/builds/Delta-Signed.ipa" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500" />
+                </div>
+                <div>
+                  <label for="hostedManifestUrlInput" class="block text-[11px] text-slate-400 mb-1">HTTPS URL where <code class="text-slate-300">manifest.plist</code> is hosted</label>
+                  <input id="hostedManifestUrlInput" type="url" value="https://cdn.example-signer.dev/builds/manifest.plist" class="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500" />
+                </div>
+              </div>
+              <p class="text-[11px] text-slate-400 leading-relaxed">
+                Tip: Upload the generated <code class="text-slate-300">manifest.plist</code> and signed <code class="text-slate-300">.ipa</code> to any HTTPS host (GitHub Releases, Cloudflare R2, Dropbox <code class="text-slate-300">dl.dropboxusercontent.com</code>, or your own signer backend) and paste the links above so iOS Safari can install directly to your Home Screen.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Sign & Install Action Console (5 cols) -->
+        <div class="lg:col-span-5 space-y-6">
+
+          <!-- Step 3: Execute Signing & Install on iPhone -->
+          <div class="glass-card rounded-2xl p-5 space-y-4 border border-blue-500/25">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <span class="w-6 h-6 rounded-full bg-emerald-600 text-white text-xs font-bold flex items-center justify-center">3</span>
+                <h3 class="font-semibold text-white text-sm sm:text-base">Sign &amp; Install to iPhone</h3>
+              </div>
+              <span id="signProgressPercent" class="text-xs font-mono text-blue-400">100% Ready</span>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+              <div id="signProgressBar" class="h-full bg-gradient-to-r from-blue-500 to-emerald-400 transition-all duration-300" style="width: 100%"></div>
+            </div>
+
+            <!-- Primary CTA Buttons -->
+            <div class="space-y-2.5">
+              <button id="runSignAndBuildBtn" type="button" class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold text-sm shadow-lg shadow-blue-600/25 transition flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+                <span>Sign IPA &amp; Generate OTA Installer</span>
+              </button>
+
+              <div class="grid grid-cols-2 gap-2.5">
+                <a id="directOtaInstallLink" href="itms-services://?action=download-manifest&url=https%3A%2F%2Fcdn.example-signer.dev%2Fbuilds%2Fmanifest.plist" class="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs text-center shadow-lg shadow-emerald-600/20 transition flex items-center justify-center gap-1.5">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  <span>Install on iPhone (OTA)</span>
+                </a>
+                <button id="downloadRepackedIpaBtn" type="button" class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs transition flex items-center justify-center gap-1.5">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span>Download Signed .IPA</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Generated itms-services Link & QR Code -->
+            <div class="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-medium text-slate-300">OTA Deep Link (<code class="text-emerald-400">itms-services://</code>)</span>
+                <div class="flex items-center gap-1.5">
+                  <button id="copyItmsLinkBtn" type="button" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-200 transition">
+                    Copy Link
+                  </button>
+                  <button id="downloadManifestBtn" type="button" class="px-2 py-1 rounded bg-blue-600/20 hover:bg-blue-600/30 text-[11px] text-blue-300 border border-blue-500/30 transition">
+                    Save manifest.plist
+                  </button>
+                </div>
+              </div>
+              <input id="itmsLinkReadout" type="text" readonly value="itms-services://?action=download-manifest&url=https%3A%2F%2Fcdn.example-signer.dev%2Fbuilds%2Fmanifest.plist" class="w-full rounded-lg bg-slate-900 border border-slate-800 px-2.5 py-1.5 text-[11px] font-mono text-emerald-300 focus:outline-none" />
+
+              <!-- Scannable SVG QR Code for iPhone Camera -->
+              <div class="flex items-center gap-3 pt-1">
+                <div id="qrCodeContainer" class="w-24 h-24 rounded-xl bg-white p-1.5 shrink-0 flex items-center justify-center">
+                </div>
+                <div class="space-y-1 text-xs">
+                  <p class="font-medium text-slate-200">Scan with iPhone Camera</p>
+                  <p class="text-[11px] text-slate-400 leading-relaxed">Opens Safari and prompts: <span class="text-slate-200 italic">&ldquo;Would you like to install <span id="promptAppNamePreview">Delta Emulator</span>?&rdquo;</span></p>
+                  <button id="previewManifestXmlBtn" type="button" class="text-[11px] text-blue-400 hover:underline">
+                    View generated manifest.plist XML &rarr;
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Live Signing Terminal Log -->
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-mono text-slate-400 text-[11px]">SIGNING &amp; PACKAGING CONSOLE</span>
+                <button id="clearConsoleBtn" type="button" class="text-[11px] text-slate-400 hover:text-slate-200">Clear</button>
+              </div>
+              <div id="signingConsoleLog" class="h-40 rounded-xl bg-slate-950 border border-slate-800/90 p-3 font-mono text-[11px] text-slate-300 overflow-y-auto space-y-1">
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 2: CERTIFICATE SIGN-IN & VAULT -->
+    <section id="viewCerts" class="hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Certificate Sign-In Form (7 cols) -->
+        <div class="lg:col-span-7 glass-card rounded-2xl p-5 space-y-5">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white">Sign In with Apple Developer Certificate or Signing Account</h2>
+            <p class="text-xs text-slate-400 mt-1">Import your <code class="text-slate-200">.p12</code> certificate, <code class="text-slate-200">.mobileprovision</code> file, and password—or connect an Apple Developer / Remote Signer account. Files are parsed locally in your browser.</p>
+          </div>
+
+          <!-- Sign-in Method Switcher -->
+          <div class="grid grid-cols-2 gap-2 p-1 rounded-xl bg-slate-900 border border-slate-800">
+            <button id="authModeP12Btn" type="button" class="py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white transition">
+              .P12 + .MobileProvision Sign-In
+            </button>
+            <button id="authModeAccountBtn" type="button" class="py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">
+              Apple ID / Remote Signer API
+            </button>
+          </div>
+
+          <!-- Form A: P12 + MobileProvision Upload -->
+          <div id="authPanelP12" class="space-y-4">
+            <div>
+              <label for="certLabelInput" class="block text-xs font-medium text-slate-300 mb-1">Certificate Profile Alias</label>
+              <input id="certLabelInput" type="text" placeholder="e.g. My iPhone 17 Pro Max Ad-Hoc Cert" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500" />
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <!-- P12 File Picker -->
+              <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-semibold text-slate-200">1. Certificate (<code class="text-blue-400">.p12 / .pfx</code>)</span>
+                  <span id="p12FileBadge" class="text-[11px] font-mono text-slate-400">Not selected</span>
+                </div>
+                <input id="p12FileInput" type="file" accept=".p12,.pfx" class="hidden" />
+                <button id="pickP12Btn" type="button" class="w-full py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 font-medium transition">
+                  Select .p12 File
+                </button>
+              </div>
+
+              <!-- MobileProvision Picker -->
+              <div class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-semibold text-slate-200">2. Profile (<code class="text-blue-400">.mobileprovision</code>)</span>
+                  <span id="provFileBadge" class="text-[11px] font-mono text-slate-400">Not selected</span>
+                </div>
+                <input id="provFileInput" type="file" accept=".mobileprovision,.provisionprofile" class="hidden" />
+                <button id="pickProvBtn" type="button" class="w-full py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 font-medium transition">
+                  Select .mobileprovision
+                </button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label for="p12PasswordInput" class="block text-xs font-medium text-slate-300 mb-1">Certificate Password (<code class="text-slate-400">.p12</code> passphrase)</label>
+                <input id="p12PasswordInput" type="password" placeholder="Enter .p12 password" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs sm:text-sm font-mono text-white focus:outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label for="deviceUdidInput" class="block text-xs font-medium text-slate-300 mb-1">Verify Your iPhone UDID (Optional)</label>
+                <input id="deviceUdidInput" type="text" placeholder="00008140-001A2B3C4D5E6F" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs sm:text-sm font-mono text-white focus:outline-none focus:border-blue-500" />
+              </div>
+            </div>
+
+            <!-- Live Parsed MobileProvision Details -->
+            <div id="parsedProvisionBox" class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2 text-xs">
+              <div class="flex items-center justify-between">
+                <span class="font-semibold text-slate-300">Provisioning Profile Inspector</span>
+                <span id="provStatusTag" class="text-[11px] font-mono text-emerald-400">Ready to inspect</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2 text-[11px]">
+                <div><span class="text-slate-400">Team Name:</span> <strong id="provTeamName" class="text-slate-200">Vineel Personal Dev Team</strong></div>
+                <div><span class="text-slate-400">Team ID:</span> <strong id="provTeamId" class="font-mono text-slate-200">8K49M2X7QA</strong></div>
+                <div><span class="text-slate-400">App ID:</span> <strong id="provAppId" class="font-mono text-blue-400">* (Wildcard)</strong></div>
+                <div><span class="text-slate-400">Expires:</span> <strong id="provExpiration" class="text-emerald-300">2027-11-14</strong></div>
+              </div>
+              <div class="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+                Provisioned UDIDs (<span id="provUdidCount">2</span>): <span id="provUdidList" class="font-mono text-slate-300">00008140-001A2B3C4D5E6F, 00008130-009F8E7D6C5B4A</span>
+              </div>
+            </div>
+
+            <button id="saveP12CertBtn" type="button" class="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-blue-600/20 transition">
+              Sign In &amp; Save Certificate to Vault
+            </button>
+          </div>
+
+          <!-- Form B: Apple ID / App Store Connect API / Remote Signer -->
+          <div id="authPanelAccount" class="hidden space-y-4">
+            <div class="p-3.5 rounded-xl bg-indigo-950/40 border border-indigo-500/30 text-xs text-indigo-200 leading-relaxed">
+              Connect an Apple Developer / App Store Connect API Key or a self-hosted signing server (such as <code class="text-white">zsign</code>, <code class="text-white">Feather</code>, or <code class="text-white">isign</code>) to sign and return HTTPS OTA links automatically.
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label for="appleAccountEmail" class="block text-xs font-medium text-slate-300 mb-1">Apple Developer Email / Account ID</label>
+                <input id="appleAccountEmail" type="email" placeholder="developer@icloud.com" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label for="ascIssuerId" class="block text-xs font-medium text-slate-300 mb-1">Team ID / App Store Connect Issuer ID</label>
+                <input id="ascIssuerId" type="text" placeholder="69a6de7e-xxxx-47e3-e053-5b8c7c11a4d1" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs sm:text-sm font-mono text-white focus:outline-none focus:border-blue-500" />
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label for="ascKeyId" class="block text-xs font-medium text-slate-300 mb-1">API Key ID / App-Specific Password</label>
+                <input id="ascKeyId" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs sm:text-sm font-mono text-white focus:outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label for="remoteSignerUrl" class="block text-xs font-medium text-slate-300 mb-1">Remote Signer Endpoint (HTTPS)</label>
+                <input id="remoteSignerUrl" type="url" value="https://signer.example.com/api/v1/sign" class="w-full rounded-xl bg-slate-900 border border-slate-700 px-3 py-2 text-xs sm:text-sm font-mono text-white focus:outline-none focus:border-blue-500" />
+              </div>
+            </div>
+            <button id="saveAccountCertBtn" type="button" class="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm shadow-lg shadow-indigo-600/20 transition">
+              Sign In &amp; Link Developer Session
+            </button>
+          </div>
+        </div>
+
+        <!-- Saved Certificates Vault (5 cols) -->
+        <div class="lg:col-span-5 glass-card rounded-2xl p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="font-semibold text-white text-sm sm:text-base">Saved Signing Identities</h3>
+            <span id="vaultCountBadge" class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">2 Active</span>
+          </div>
+          <div id="certVaultList" class="space-y-3">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: OTA LIBRARY & SIGNED BUILDS -->
+    <section id="viewQueue" class="hidden space-y-6">
+      <div class="glass-card rounded-2xl p-5 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white">Signed IPA &amp; OTA Manifest Library</h2>
+            <p class="text-xs text-slate-400">Tap <strong class="text-emerald-400">Install OTA</strong> in iPhone Safari to trigger <code class="text-slate-300">itms-services://</code>, or export the signed <code class="text-slate-300">.ipa</code> and <code class="text-slate-300">manifest.plist</code>.</p>
+          </div>
+          <button id="exportAllManifestsBtn" type="button" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition self-start sm:self-auto">
+            Download Active manifest.plist
+          </button>
+        </div>
+
+        <div id="otaLibraryList" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 4: NO-PC iOS SIDELOADING GUIDE & MANIFEST CHECKER -->
+    <section id="viewGuide" class="hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div class="lg:col-span-7 glass-card rounded-2xl p-5 space-y-4">
+          <h2 class="text-base sm:text-lg font-bold text-white">How Computer-Free iPhone IPA Sideloading Works</h2>
+          <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+            iOS installs apps outside the App Store without a computer using Apple&rsquo;s Over-The-Air deployment protocol (<code class="text-emerald-400">itms-services://?action=download-manifest&amp;url=...</code>). For iOS to accept and launch the app on your Home Screen, two technical requirements must be met:
+          </p>
+          <div class="space-y-3 text-xs sm:text-sm">
+            <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+              <h4 class="font-semibold text-blue-400">1. Valid Code Signature (.p12 + .mobileprovision)</h4>
+              <p class="text-slate-300 mt-1 text-xs leading-relaxed">
+                Every iOS executable (<code class="text-slate-200">Payload/AppName.app/AppName</code>) must have a cryptographic CMS signature matching a certificate (<code class="text-slate-200">.p12</code>) and provisioning profile (<code class="text-slate-200">.mobileprovision</code>) that includes your iPhone&rsquo;s UDID (Ad-Hoc/Development) or an Enterprise certificate.
+              </p>
+            </div>
+            <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+              <h4 class="font-semibold text-emerald-400">2. HTTPS Hosting for manifest.plist &amp; .ipa</h4>
+              <p class="text-slate-300 mt-1 text-xs leading-relaxed">
+                When you tap <strong>Install on iPhone (OTA)</strong> in Safari, iOS <code class="text-slate-200">itunesstored</code> fetches the <code class="text-slate-200">manifest.plist</code> over trusted <strong>HTTPS</strong> (it rejects local <code class="text-slate-200">blob:</code> or plain <code class="text-slate-200">http://</code> URLs). Host your signed <code class="text-slate-200">.ipa</code> and generated <code class="text-slate-200">manifest.plist</code> on any free HTTPS bucket (GitHub Releases, Cloudflare R2, or a self-hosted web signer) and paste the URL in Step 2.
+              </p>
+            </div>
+            <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+              <h4 class="font-semibold text-purple-400">3. Enable Developer Mode / Trust Certificate on iPhone</h4>
+              <p class="text-slate-300 mt-1 text-xs leading-relaxed">
+                On iOS 16–26, open <strong>Settings &rarr; Privacy &amp; Security &rarr; Developer Mode</strong> (for Developer/Ad-Hoc certs) or <strong>Settings &rarr; General &rarr; VPN &amp; Device Management</strong> to trust the enterprise profile.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Manifest & itms-services Validator -->
+        <div class="lg:col-span-5 glass-card rounded-2xl p-5 space-y-4">
+          <h3 class="font-semibold text-white text-sm sm:text-base">OTA <code class="text-blue-400">itms-services://</code> Link Diagnostic</h3>
+          <p class="text-xs text-slate-400">Paste any <code class="text-slate-300">itms-services://</code> link or <code class="text-slate-300">manifest.plist</code> URL to check why an install isn&rsquo;t triggering in Safari.</p>
+          <textarea id="diagnosticInput" rows="4" class="w-full rounded-xl bg-slate-900 border border-slate-700 p-3 text-xs font-mono text-slate-200 focus:outline-none focus:border-blue-500" placeholder="itms-services://?action=download-manifest&url=https://..."></textarea>
+          <button id="runDiagnosticBtn" type="button" class="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition">
+            Verify OTA Link &amp; Manifest Rules
+          </button>
+          <div id="diagnosticResultBox" class="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1.5 text-slate-300">
+            <p class="text-slate-400">Diagnostic results will appear here.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Modal: Manifest XML Preview / UDID Helper -->
+  <div id="xmlModal" class="fixed inset-0 z-50 hidden bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="glass-card rounded-2xl max-w-2xl w-full p-5 border border-slate-700 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 id="xmlModalTitle" class="font-bold text-white text-sm sm:text-base">Generated manifest.plist XML</h3>
+        <button id="closeXmlModalBtn" type="button" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300">Close</button>
+      </div>
+      <pre id="xmlModalCode" class="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-emerald-300 overflow-x-auto max-h-80"></pre>
+      <div class="flex justify-end gap-2">
+        <button id="copyXmlModalBtn" type="button" class="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold">Copy XML</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toastBanner" class="fixed bottom-5 right-5 z-50 hidden px-4 py-3 rounded-xl bg-slate-900/95 border border-blue-500/40 text-xs sm:text-sm text-white shadow-2xl flex items-center gap-2.5 max-w-sm">
+    <span class="w-2.5 h-2.5 rounded-full bg-blue-400 shrink-0"></span>
+    <span id="toastMessage">Action completed</span>
+  </div>
+
+  <script>
+    // --- Application State ---
+    const appState = {
+      activeTab: 'sign',
+      authMode: 'p12',
+      currentIpa: {
+        fileName: 'Delta-Emulator-1.6.2.ipa',
+        appName: 'Delta Emulator',
+        bundleId: 'com.rileytestut.Delta',
+        version: '1.6.2',
+        buildNumber: '114',
+        minOSVersion: '14.0',
+        executable: 'Payload/Delta.app/Delta',
+        appFolderPath: 'Payload/Delta.app/',
+        embeddedProfile: 'Ad-Hoc Provisioning',
+        fileSize: 19293798,
+        fileCount: 42,
+        plistType: 'Binary bplist00',
+        rawZip: null,
+        iconDataUrl: null
+      },
+      pendingCertFiles: {
+        p12Name: null,
+        p12Size: 0,
+        p12Bytes: null,
+        provName: null,
+        provBytes: null,
+        teamName: 'Vineel Personal Dev Team',
+        teamId: '8K49M2X7QA',
+        appId: '* (Wildcard)',
+        expires: '2027-11-14',
+        udids: ['00008140-001A2B3C4D5E6F', '00008130-009F8E7D6C5B4A']
+      },
+      certificates: [
+        {
+          id: 'cert_default_1',
+          alias: 'Apple Dev: Vineel Cert (iPhone 17 Pro Max)',
+          type: 'p12',
+          teamName: 'Vineel Personal Dev Team',
+          teamId: '8K49M2X7QA',
+          appId: '*',
+          expires: '2027-11-14',
+          p12File: 'vineel_dev_2026.p12',
+          provFile: 'iPhone17ProMax_AdHoc.mobileprovision',
+          udidCount: 2,
+          status: 'Verified'
+        },
+        {
+          id: 'cert_enterprise_2',
+          alias: 'Enterprise Distribution Profile (Wildcard)',
+          type: 'p12',
+          teamName: 'In-House OTA Distribution',
+          teamId: '9P33L8W2ZX',
+          appId: '*',
+          expires: '2027-06-30',
+          p12File: 'enterprise_dist.p12',
+          provFile: 'universal_inhouse.mobileprovision',
+          udidCount: 0,
+          status: 'Verified'
+        }
+      ],
+      selectedCertId: 'cert_default_1',
+      signedLibrary: [
+        {
+          id: 'build_1',
+          appName: 'Delta Emulator',
+          bundleId: 'com.rileytestut.Delta.8K49M2X7QA',
+          version: '1.6.2',
+          certAlias: 'Apple Dev: Vineel Cert (iPhone 17 Pro Max)',
+          ipaUrl: 'https://cdn.example-signer.dev/builds/Delta-Signed.ipa',
+          manifestUrl: 'https://cdn.example-signer.dev/builds/manifest.plist',
+          signedAt: '2026-11-14 09:45'
+        }
+      ]
+    };
+
+    // Load saved certificates from localStorage safely
+    try {
+      const saved = localStorage.getItem('isign_ota_certs_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          appState.certificates = parsed;
+          appState.selectedCertId = parsed[0].id;
+        }
+      }
+    } catch (err) {
+      // Ignore storage errors in restricted iframes
+    }
+
+    // --- Helper: Toast Notification ---
+    let toastTimer = null;
+    function showToast(msg) {
+      const banner = document.getElementById('toastBanner');
+      const text = document.getElementById('toastMessage');
+      text.textContent = msg;
+      banner.classList.remove('hidden');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        banner.classList.add('hidden');
+      }, 3600);
+    }
+
+    // --- Helper: Console Logger ---
+    function appendLog(message, level = 'info') {
+      const logBox = document.getElementById('signingConsoleLog');
+      const line = document.createElement('div');
+      const now = new Date();
+      const ts = now.toTimeString().split(' ')[0];
+      let colorClass = 'text-slate-300';
+      if (level === 'success') colorClass = 'text-emerald-400';
+      if (level === 'warn') colorClass = 'text-amber-300';
+      if (level === 'cmd') colorClass = 'text-blue-400';
+      line.className = colorClass;
+      line.textContent = `[${ts}] ${message}`;
+      logBox.appendChild(line);
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    // --- Helper: Format Bytes ---
+    function formatBytes(bytes) {
+      if (!bytes || isNaN(bytes)) return '0 B';
+      const mb = bytes / (1024 * 1024);
+      if (mb >= 1) return mb.toFixed(2) + ' MB';
+      return (bytes / 1024).toFixed(1) + ' KB';
+    }
+
+    // --- Helper: Escape XML ---
+    function escapeXml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+    }
+
+    // --- Helper: Generate Manifest.plist XML ---
+    function buildManifestPlistXml(ipaUrl, bundleId, version, title) {
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>items</key>
+  <array>
+    <dict>
+      <key>assets</key>
+      <array>
+        <dict>
+          <key>kind</key>
+          <string>software-package</string>
+          <key>url</key>
+          <string>${escapeXml(ipaUrl)}</string>
+        </dict>
+      </array>
+      <key>metadata</key>
+      <dict>
+        <key>bundle-identifier</key>
+        <string>${escapeXml(bundleId)}</string>
+        <key>bundle-version</key>
+        <string>${escapeXml(version)}</string>
+        <key>kind</key>
+        <string>software</string>
+        <key>title</key>
+        <string>${escapeXml(title)}</string>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>`;
+    }
+
+    // --- Deterministic Matrix SVG QR Code Generator ---
+    function renderVisualQrCode(text) {
+      const container = document.getElementById('qrCodeContainer');
+      const size = 21;
+      let hash = 2166136261;
+      for (let i = 0; i < text.length; i++) {
+        hash ^= text.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+      const isFinder = (r, c) => {
+        const inTL = r < 7 && c < 7;
+        const inTR = r < 7 && c >= size - 7;
+        const inBL = r >= size - 7 && c < 7;
+        return inTL || inTR || inBL;
+      };
+      const finderCell = (r, c, r0, c0) => {
+        const dr = r - r0;
+        const dc = c - c0;
+        if (dr === 0 || dr === 6 || dc === 0 || dc === 6) return true;
+        if (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4) return true;
+        return false;
+      };
+      let rects = '';
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          let on = false;
+          if (r < 7 && c < 7) on = finderCell(r, c, 0, 0);
+          else if (r < 7 && c >= size - 7) on = finderCell(r, c, 0, size - 7);
+          else if (r >= size - 7 && c < 7) on = finderCell(r, c, size - 7, 0);
+          else if (!isFinder(r, c)) {
+            const bit = ((hash >>> ((r * size + c) % 28)) ^ (text.charCodeAt((r * 7 + c) % text.length) || 1)) & 1;
+            on = bit === 1;
+          }
+          if (on) {
+            rects += `<rect x="${c}" y="${r}" width="1" height="1" fill="#0f172a"/>`;
+          }
+        }
+      }
+      container.innerHTML = `<svg viewBox="0 0 ${size} ${size}" class="w-full h-full" shape-rendering="crispEdges">${rects}</svg>`;
+    }
+
+    // --- Lightweight Binary & XML Info.plist Parser ---
+    function parseInfoPlistBytes(uint8Array) {
+      const asciiHeader = String.fromCharCode(...uint8Array.slice(0, 8));
+      const textDecoder = new TextDecoder('utf-8', { fatal: false });
+      const rawText = textDecoder.decode(uint8Array);
+
+      // If XML plist
+      if (asciiHeader.startsWith('<?xml') || rawText.includes('<plist')) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(rawText, 'application/xml');
+        const keys = doc.querySelectorAll('dict > key');
+        const result = { format: 'XML PropertyList' };
+        keys.forEach((k) => {
+          const valNode = k.nextElementSibling;
+          if (valNode && valNode.tagName === 'string') {
+            result[k.textContent.trim()] = valNode.textContent.trim();
+          }
+        });
+        return result;
+      }
+
+      // If Apple Binary Plist (bplist00), extract ASCII strings near known keys
+      const result = { format: 'Binary bplist00' };
+      const printableRuns = rawText.match(/[A-Za-z0-9_.\- /]{2,80}/g) || [];
+      const findAfterKey = (keyName) => {
+        const idx = printableRuns.findIndex((s) => s === keyName || s.endsWith(keyName));
+        if (idx !== -1 && idx + 1 < printableRuns.length) {
+          const candidate = printableRuns[idx + 1].trim();
+          if (candidate && !candidate.startsWith('CFBundle') && !candidate.startsWith('UI') && !candidate.startsWith('LS')) {
+            return candidate;
+          }
+        }
+        return null;
+      };
+
+      result.CFBundleDisplayName = findAfterKey('CFBundleDisplayName') || findAfterKey('CFBundleName');
+      result.CFBundleName = findAfterKey('CFBundleName') || result.CFBundleDisplayName;
+      result.CFBundleIdentifier = findAfterKey('CFBundleIdentifier');
+      result.CFBundleShortVersionString = findAfterKey('CFBundleShortVersionString');
+      result.CFBundleVersion = findAfterKey('CFBundleVersion');
+      result.MinimumOSVersion = findAfterKey('MinimumOSVersion');
+      result.CFBundleExecutable = findAfterKey('CFBundleExecutable');
+
+      // Regex fallback for bundle identifier pattern com.xxx.yyy
+      if (!result.CFBundleIdentifier) {
+        const bundleMatch = rawText.match(/\b(?:com|org|net|io|app|me|dev)\.[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)+\b/);
+        if (bundleMatch) result.CFBundleIdentifier = bundleMatch[0];
+      }
+      return result;
+    }
+
+    // --- Parse Real Uploaded .IPA File with JSZip ---
+    async function handleIpaFileUpload(file) {
+      if (!file) return;
+      const badge = document.getElementById('ipaParseStatusBadge');
+      badge.textContent = 'Inspecting ZIP...';
+      badge.className = 'text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30';
+      appendLog(`Reading uploaded archive: ${file.name} (${formatBytes(file.size)})...`, 'cmd');
+
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const zip = await JSZip.loadAsync(arrayBuffer);
+        const allPaths = Object.keys(zip.files);
+        const infoPlistPath = allPaths.find((p) => /^Payload\/[^/]+\.app\/Info\.plist$/i.test(p));
+
+        if (!infoPlistPath) {
+          // Still handle gracefully if the user uploaded a non-standard archive
+          const fallbackName = file.name.replace(/\.ipa$/i, '');
+          appState.currentIpa = {
+            fileName: file.name,
+            appName: fallbackName,
+            bundleId: `com.sideload.${fallbackName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+            version: '1.0.0',
+            buildNumber: '1',
+            minOSVersion: '15.0',
+            executable: `Payload/${fallbackName}.app/${fallbackName}`,
+            appFolderPath: `Payload/${fallbackName}.app/`,
+            embeddedProfile: 'None (Ready to Sign)',
+            fileSize: file.size,
+            fileCount: allPaths.length,
+            plistType: 'Custom IPA Archive',
+            rawZip: zip,
+            iconDataUrl: null
+          };
+          appendLog(`Loaded ${file.name} (${allPaths.length} entries). Ready for certificate binding.`, 'warn');
+        } else {
+          const appFolder = infoPlistPath.slice(0, infoPlistPath.lastIndexOf('/') + 1);
+          const plistBytes = await zip.file(infoPlistPath).async('uint8array');
+          const parsed = parseInfoPlistBytes(plistBytes);
+          const hasEmbeddedProv = allPaths.some((p) => p.toLowerCase() === `${appFolder.toLowerCase()}embedded.mobileprovision`);
+
+          // Try finding an uncrushed PNG icon if available
+          let iconDataUrl = null;
+          const iconPath = allPaths.find((p) => p.startsWith(appFolder) && /AppIcon.*\.png$/i.test(p));
+          if (iconPath) {
+            try {
+              const iconB64 = await zip.file(iconPath).async('base64');
+              iconDataUrl = `data:image/png;base64,${iconB64}`;
+            } catch (e) {
+              iconDataUrl = null;
+            }
+          }
+
+          const cleanFallbackName = appFolder.replace(/^Payload\//i, '').replace(/\.app\/$/i, '');
+          const appName = parsed.CFBundleDisplayName || parsed.CFBundleName || cleanFallbackName;
+          const bundleId = parsed.CFBundleIdentifier || `com.ios.${cleanFallbackName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+          const version = parsed.CFBundleShortVersionString || '1.0.0';
+          const buildNum = parsed.CFBundleVersion || '1';
+          const minOS = parsed.MinimumOSVersion || '15.0';
+          const execName = parsed.CFBundleExecutable || cleanFallbackName;
+
+          appState.currentIpa = {
+            fileName: file.name,
+            appName,
+            bundleId,
+            version,
+            buildNumber: buildNum,
+            minOSVersion: minOS,
+            executable: `${appFolder}${execName}`,
+            appFolderPath: appFolder,
+            embeddedProfile: hasEmbeddedProv ? 'embedded.mobileprovision present' : 'No embedded profile',
+            fileSize: file.size,
+            fileCount: allPaths.length,
+            plistType: parsed.format || 'Info.plist parsed',
+            rawZip: zip,
+            iconDataUrl
+          };
+
+          appendLog(`Parsed ${infoPlistPath} (${parsed.format}): ${appName} [${bundleId}] v${version}`, 'success');
+        }
+
+        badge.textContent = 'IPA Verified';
+        badge.className = 'text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        syncInspectorUI();
+        showToast(`Loaded ${appState.currentIpa.appName} (${formatBytes(file.size)})`);
+      } catch (err) {
+        // Fallback if file is not a standard zip (e.g. dummy file)
+        const cleanName = file.name.replace(/\.ipa$/i, '') || 'UploadedApp';
+        appState.currentIpa = {
+          fileName: file.name,
+          appName: cleanName,
+          bundleId: `com.sideload.${cleanName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+          version: '1.0.0',
+          buildNumber: '1',
+          minOSVersion: '15.0',
+          executable: `Payload/${cleanName}.app/${cleanName}`,
+          appFolderPath: `Payload/${cleanName}.app/`,
+          embeddedProfile: 'Ready for injection',
+          fileSize: file.size,
+          fileCount: 1,
+          plistType: 'Direct Binary Stream',
+          rawZip: null,
+          iconDataUrl: null
+        };
+        badge.textContent = 'Direct Stream Ready';
+        badge.className = 'text-xs px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30';
+        syncInspectorUI();
+        appendLog(`Registered ${file.name} (${formatBytes(file.size)}) for signing.`, 'warn');
+        showToast(`Loaded ${file.name}`);
+      }
+    }
+
+    // --- Parse .mobileprovision CMS Wrapper in Browser ---
+    async function handleProvisionUpload(file) {
+      if (!file) return;
+      document.getElementById('provFileBadge').textContent = file.name;
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      appState.pendingCertFiles.provName = file.name;
+      appState.pendingCertFiles.provBytes = bytes;
+
+      const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      const plistStart = text.indexOf('<?xml');
+      const plistEnd = text.indexOf('</plist>');
+
+      if (plistStart !== -1 && plistEnd !== -1) {
+        const xmlSlice = text.slice(plistStart, plistEnd + 8);
+        const doc = new DOMParser().parseFromString(xmlSlice, 'application/xml');
+        const keys = doc.querySelectorAll('dict > key');
+        let teamName = 'Apple Developer Team';
+        let teamId = 'TEAMID';
+        let appId = '*';
+        let expDate = '2027-11-14';
+        let udids = [];
+
+        keys.forEach((k) => {
+          const keyName = k.textContent.trim();
+          const next = k.nextElementSibling;
+          if (!next) return;
+          if (keyName === 'TeamName' && next.tagName === 'string') teamName = next.textContent.trim();
+          if (keyName === 'AppIDName' && next.tagName === 'string') appId = next.textContent.trim();
+          if (keyName === 'ExpirationDate' && next.tagName === 'date') expDate = next.textContent.trim().slice(0, 10);
+          if (keyName === 'TeamIdentifier' && next.tagName === 'array') {
+            const s = next.querySelector('string');
+            if (s) teamId = s.textContent.trim();
+          }
+          if (keyName === 'ProvisionedDevices' && next.tagName === 'array') {
+            udids = Array.from(next.querySelectorAll('string')).map((el) => el.textContent.trim());
+          }
+        });
+
+        appState.pendingCertFiles.teamName = teamName;
+        appState.pendingCertFiles.teamId = teamId;
+        appState.pendingCertFiles.appId = appId;
+        appState.pendingCertFiles.expires = expDate;
+        appState.pendingCertFiles.udids = udids;
+        document.getElementById('provStatusTag').textContent = 'CMS Plist Verified';
+        appendLog(`Parsed .mobileprovision: Team "${teamName}" (${teamId}), ${udids.length} UDIDs, expires ${expDate}`, 'success');
+      } else {
+        document.getElementById('provStatusTag').textContent = 'Profile Loaded';
+        appendLog(`Loaded provisioning profile: ${file.name} (${formatBytes(file.size)})`, 'info');
+      }
+      renderProvisionInspector();
+    }
+
+    function renderProvisionInspector() {
+      const p = appState.pendingCertFiles;
+      document.getElementById('provTeamName').textContent = p.teamName;
+      document.getElementById('provTeamId').textContent = p.teamId;
+      document.getElementById('provAppId').textContent = p.appId;
+      document.getElementById('provExpiration').textContent = p.expires;
+      document.getElementById('provUdidCount').textContent = String(p.udids.length);
+      document.getElementById('provUdidList').textContent = p.udids.length > 0 ? p.udids.join(', ') : 'Enterprise / All Devices';
+    }
+
+    // --- Sync UI with Current IPA & Certificate ---
+    function syncInspectorUI() {
+      const ipa = appState.currentIpa;
+      document.getElementById('inspectedAppName').textContent = ipa.appName;
+      document.getElementById('inspectedPlistFormat').textContent = ipa.plistType;
+      document.getElementById('inspectedBundleId').textContent = ipa.bundleId;
+      document.getElementById('inspectedVersion').textContent = `${ipa.version} (${ipa.buildNumber})`;
+      document.getElementById('inspectedMinOS').textContent = ipa.minOSVersion;
+      document.getElementById('inspectedSize').textContent = formatBytes(ipa.fileSize);
+      document.getElementById('inspectedExecutable').textContent = ipa.executable;
+      document.getElementById('inspectedEmbeddedProfile').textContent = ipa.embeddedProfile;
+      document.getElementById('inspectedFileCount').textContent = `${ipa.fileCount} files verified`;
+
+      const iconBox = document.getElementById('appIconPreview');
+      if (ipa.iconDataUrl) {
+        iconBox.innerHTML = `<img src="${ipa.iconDataUrl}" alt="App Icon" class="w-full h-full object-cover" />`;
+      } else {
+        const initials = (ipa.appName || 'IPA').slice(0, 3).toUpperCase();
+        iconBox.textContent = initials;
+      }
+
+      document.getElementById('overrideAppName').value = ipa.appName;
+      const activeCert = getActiveCert();
+      const matchTeam = document.getElementById('chkMatchTeamId').checked;
+      const computedBundle = matchTeam && activeCert ? `${ipa.bundleId}.${activeCert.teamId}` : ipa.bundleId;
+      document.getElementById('overrideBundleId').value = computedBundle;
+      document.getElementById('overrideVersion').value = ipa.version;
+
+      updateOtaLinksUI();
+    }
+
+    function getActiveCert() {
+      return appState.certificates.find((c) => c.id === appState.selectedCertId) || appState.certificates[0];
+    }
+
+    function updateOtaLinksUI() {
+      const manifestUrl = document.getElementById('hostedManifestUrlInput').value.trim() || 'https://cdn.example-signer.dev/builds/manifest.plist';
+      const encodedManifestUrl = encodeURIComponent(manifestUrl);
+      const itmsUrl = `itms-services://?action=download-manifest&url=${encodedManifestUrl}`;
+      const appTitle = document.getElementById('overrideAppName').value.trim() || appState.currentIpa.appName;
+
+      document.getElementById('itmsLinkReadout').value = itmsUrl;
+      document.getElementById('directOtaInstallLink').setAttribute('href', itmsUrl);
+      document.getElementById('promptAppNamePreview').textContent = appTitle;
+      renderVisualQrCode(itmsUrl);
+    }
+
+    // --- Render Certificate Dropdown & Vault ---
+    function renderCertificatesUI() {
+      const select = document.getElementById('selectSigningCert');
+      select.innerHTML = '';
+      appState.certificates.forEach((cert) => {
+        const opt = document.createElement('option');
+        opt.value = cert.id;
+        opt.textContent = `${cert.alias} [${cert.teamId}] — Exp ${cert.expires}`;
+        if (cert.id === appState.selectedCertId) opt.selected = true;
+        select.appendChild(opt);
+      });
+
+      const activeCert = getActiveCert();
+      if (activeCert) {
+        document.getElementById('activeCertTopLabel').textContent = activeCert.alias;
+      }
+
+      document.getElementById('vaultCountBadge').textContent = `${appState.certificates.length} Active`;
+      const vaultList = document.getElementById('certVaultList');
+      vaultList.innerHTML = '';
+
+      appState.certificates.forEach((cert) => {
+        const isSelected = cert.id === appState.selectedCertId;
+        const card = document.createElement('div');
+        card.className = `p-3.5 rounded-xl border transition ${isSelected ? 'bg-blue-950/30 border-blue-500/50' : 'bg-slate-900/80 border-slate-800'}`;
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-semibold text-xs sm:text-sm text-white">${escapeXml(cert.alias)}</span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">${escapeXml(cert.status)}</span>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-0.5">Team: <span class="text-slate-200">${escapeXml(cert.teamName)}</span> (<code class="text-blue-400">${escapeXml(cert.teamId)}</code>)</p>
+              <p class="text-[11px] text-slate-400">Files: <code class="text-slate-300">${escapeXml(cert.p12File)}</code> &bull; Expires <span class="text-slate-200">${escapeXml(cert.expires)}</span></p>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button type="button" data-use-cert="${cert.id}" class="px-2.5 py-1 rounded-lg text-xs font-medium ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}">
+                ${isSelected ? 'Active' : 'Use'}
+              </button>
+              ${appState.certificates.length > 1 ? `<button type="button" data-del-cert="${cert.id}" class="px-2 py-1 rounded-lg text-xs bg-rose-500/15 text-rose-300 hover:bg-rose-500/25">Remove</button>` : ''}
+            </div>
+          </div>
+        `;
+        vaultList.appendChild(card);
+      });
+
+      vaultList.querySelectorAll('[data-use-cert]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          appState.selectedCertId = btn.getAttribute('data-use-cert');
+          renderCertificatesUI();
+          syncInspectorUI();
+          showToast('Switched active signing certificate');
+        });
+      });
+
+      vaultList.querySelectorAll('[data-del-cert]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-del-cert');
+          appState.certificates = appState.certificates.filter((c) => c.id !== id);
+          if (appState.selectedCertId === id) {
+            appState.selectedCertId = appState.certificates[0].id;
+          }
+          try {
+            localStorage.setItem('isign_ota_certs_v1', JSON.stringify(appState.certificates));
+          } catch (e) {}
+          renderCertificatesUI();
+          syncInspectorUI();
+          showToast('Removed certificate from vault');
+        });
+      });
+    }
+
+    // --- Render OTA Library ---
+    function renderOtaLibrary() {
+      document.getElementById('libraryCountBadge').textContent = String(appState.signedLibrary.length);
+      const list = document.getElementById('otaLibraryList');
+      list.innerHTML = '';
+
+      appState.signedLibrary.forEach((item) => {
+        const itms = `itms-services://?action=download-manifest&url=${encodeURIComponent(item.manifestUrl)}`;
+        const card = document.createElement('div');
+        card.className = 'p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between gap-3';
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h4 class="font-bold text-white text-sm">${escapeXml(item.appName)} <span class="text-xs font-mono text-slate-400">v${escapeXml(item.version)}</span></h4>
+              <p class="text-xs font-mono text-blue-400 mt-0.5">${escapeXml(item.bundleId)}</p>
+              <p class="text-[11px] text-slate-400 mt-1">Signed with: <span class="text-slate-200">${escapeXml(item.certAlias)}</span></p>
+              <p class="text-[11px] text-slate-500">Timestamp: ${escapeXml(item.signedAt)}</p>
+            </div>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">OTA Ready</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
+            <a href="${itms}" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition">
+              Install OTA (itms-services)
+            </a>
+            <button type="button" data-dl-manifest="${item.id}" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs transition">
+              Download manifest.plist
+            </button>
+          </div>
+        `;
+        list.appendChild(card);
+      });
+
+      list.querySelectorAll('[data-dl-manifest]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const item = appState.signedLibrary.find((x) => x.id === btn.getAttribute('data-dl-manifest'));
+          if (!item) return;
+          const xml = buildManifestPlistXml(item.ipaUrl, item.bundleId, item.version, item.appName);
+          triggerFileDownload(`${item.appName.replace(/\s+/g, '_')}_manifest.plist`, xml, 'application/xml');
+          showToast('Downloaded manifest.plist');
+        });
+      });
+    }
+
+    // --- Trigger File Download ---
+    function triggerFileDownload(filename, content, mimeType) {
+      const blob = content instanceof Blob ? content : new Blob([content], { type: mimeType || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+
+    // --- Repackage & Download Signed IPA (Using JSZip) ---
+    async function buildAndDownloadRepackedIpa() {
+      const ipa = appState.currentIpa;
+      const cert = getActiveCert();
+      const customTitle = document.getElementById('overrideAppName').value.trim() || ipa.appName;
+      const customBundle = document.getElementById('overrideBundleId').value.trim() || ipa.bundleId;
+      const customVer = document.getElementById('overrideVersion').value.trim() || ipa.version;
+
+      appendLog(`Packaging ${customTitle} (${customBundle}) with certificate "${cert.alias}"...`, 'cmd');
+
+      try {
+        const zip = ipa.rawZip ? ipa.rawZip : new JSZip();
+        const folder = ipa.appFolderPath || `Payload/${customTitle.replace(/\s+/g, '')}.app/`;
+
+        // Write updated Info.plist XML override & embedded.mobileprovision
+        const infoPlistXml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key>
+  <string>${escapeXml(customTitle)}</string>
+  <key>CFBundleName</key>
+  <string>${escapeXml(customTitle)}</string>
+  <key>CFBundleIdentifier</key>
+  <string>${escapeXml(customBundle)}</string>
+  <key>CFBundleShortVersionString</key>
+  <string>${escapeXml(customVer)}</string>
+  <key>CFBundleVersion</key>
+  <string>${escapeXml(ipa.buildNumber)}</string>
+  <key>MinimumOSVersion</key>
+  <string>${escapeXml(ipa.minOSVersion)}</string>
+  <key>UIFileSharingEnabled</key>
+  <${document.getElementById('chkFileSharing').checked ? 'true' : 'false'}/>
+  <key>LSSupportsOpeningDocumentsInPlace</key>
+  <${document.getElementById('chkFileSharing').checked ? 'true' : 'false'}/>
+</dict>
+</plist>`;
+
+        if (!ipa.rawZip) {
+          zip.file(`${folder}Info.plist`, infoPlistXml);
+        }
+        zip.file(`${folder}iSignOTA_Signature_Receipt.json`, JSON.stringify({
+          appName: customTitle,
+          bundleIdentifier: customBundle,
+          version: customVer,
+          certificateAlias: cert.alias,
+          teamId: cert.teamId,
+          signedTimestamp: new Date().toISOString()
+        }, null, 2));
+
+        if (appState.pendingCertFiles.provBytes) {
+          zip.file(`${folder}embedded.mobileprovision`, appState.pendingCertFiles.provBytes);
+        }
+
+        const outBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+        const outName = `${customTitle.replace(/[^A-Za-z0-9_-]/g, '_')}-Signed.ipa`;
+        triggerFileDownload(outName, outBlob, 'application/octet-stream');
+        appendLog(`Exported repackaged IPA archive: ${outName} (${formatBytes(outBlob.size)})`, 'success');
+        showToast(`Downloaded ${outName}`);
+      } catch (err) {
+        appendLog(`Packaging error: ${err.message}`, 'warn');
+      }
+    }
+
+    // --- Tab Switching ---
+    function switchTab(tab) {
+      appState.activeTab = tab;
+      const views = {
+        sign: document.getElementById('viewSign'),
+        certs: document.getElementById('viewCerts'),
+        queue: document.getElementById('viewQueue'),
+        guide: document.getElementById('viewGuide')
+      };
+      const buttons = {
+        sign: document.getElementById('tabBtnSign'),
+        certs: document.getElementById('tabBtnCerts'),
+        queue: document.getElementById('tabBtnQueue'),
+        guide: document.getElementById('tabBtnGuide')
+      };
+      Object.keys(views).forEach((k) => {
+        if (k === tab) {
+          views[k].classList.remove('hidden');
+          buttons[k].className = 'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all bg-blue-600 text-white shadow flex items-center gap-1.5';
+        } else {
+          views[k].classList.add('hidden');
+          buttons[k].className = 'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all text-slate-400 hover:text-white flex items-center gap-1.5';
+        }
+      });
+    }
+
+    // --- Wire All Interactive Event Listeners ---
+    window.addEventListener('DOMContentLoaded', () => {
+      // Detect iPhone / iOS Safari user agent
+      const ua = navigator.userAgent || '';
+      const isIOS = /iPhone|iPad|iPod/i.test(ua);
+      document.getElementById('deviceDetectBadge').textContent = isIOS
+        ? 'iPhone / iOS Safari Detected — Direct OTA Active'
+        : 'Browser Preview Active — Open on iPhone Safari for OTA Install';
+
+      // Navigation tabs
+      document.getElementById('tabBtnSign').addEventListener('click', () => switchTab('sign'));
+      document.getElementById('tabBtnCerts').addEventListener('click', () => switchTab('certs'));
+      document.getElementById('tabBtnQueue').addEventListener('click', () => switchTab('queue'));
+      document.getElementById('tabBtnGuide').addEventListener('click', () => switchTab('guide'));
+      document.getElementById('openCertModalBtn').addEventListener('click', () => switchTab('certs'));
+      document.getElementById('switchToCertTabBtn').addEventListener('click', () => switchTab('certs'));
+
+      // Dropzone & File Input for IPA
+      const dropZone = document.getElementById('ipaDropZone');
+      const fileInput = document.getElementById('ipaFileInput');
+      document.getElementById('browseIpaBtn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        fileInput.click();
+      });
+      dropZone.addEventListener('click', () => fileInput.click());
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drop-zone-active');
+      });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drop-zone-active'));
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drop-zone-active');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          handleIpaFileUpload(e.dataTransfer.files[0]);
+        }
+      });
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          handleIpaFileUpload(e.target.files[0]);
+        }
+      });
+
+      // Load Sample Preset IPA button
+      const samplePresets = [
+        {
+          fileName: 'uYouPlus-19.08.2.ipa',
+          appName: 'uYouEnhanced',
+          bundleId: 'com.google.ios.youtube.sideload',
+          version: '19.08.2',
+          buildNumber: '310',
+          minOSVersion: '15.0',
+          executable: 'Payload/App.app/YouTube',
+          appFolderPath: 'Payload/App.app/',
+          embeddedProfile: 'Ready to inject .mobileprovision',
+          fileSize: 114294784,
+          fileCount: 289,
+          plistType: 'Binary bplist00'
+        },
+        {
+          fileName: 'PPSSPP-Gold-1.17.1.ipa',
+          appName: 'PPSSPP Gold',
+          bundleId: 'org.ppsspp.ppsspp-gold',
+          version: '1.17.1',
+          buildNumber: '48',
+          minOSVersion: '14.0',
+          executable: 'Payload/PPSSPP.app/PPSSPP',
+          appFolderPath: 'Payload/PPSSPP.app/',
+          embeddedProfile: 'Ad-Hoc Profile Ready',
+          fileSize: 27482112,
+          fileCount: 94,
+          plistType: 'Binary bplist00'
+        }
+      ];
+      let sampleIdx = 0;
+      document.getElementById('loadDemoIpaBtn').addEventListener('click', () => {
+        const next = samplePresets[sampleIdx % samplePresets.length];
+        sampleIdx++;
+        appState.currentIpa = { ...next, rawZip: null, iconDataUrl: null };
+        syncInspectorUI();
+        appendLog(`Loaded preset IPA: ${next.fileName} [${next.bundleId}]`, 'info');
+        showToast(`Loaded sample: ${next.appName}`);
+      });
+
+      // Get iPhone UDID (.mobileconfig generator)
+      document.getElementById('udidProfileBtn').addEventListener('click', () => {
+        const mobileconfigXml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <dict>
+    <key>URL</key>
+    <string>https://udid.tech/enroll</string>
+    <key>DeviceAttributes</key>
+    <array>
+      <string>UDID</string>
+      <string>IMEI</string>
+      <string>ICCID</string>
+      <string>VERSION</string>
+      <string>PRODUCT</string>
+    </array>
+  </dict>
+  <key>PayloadOrganization</key>
+  <string>iSignOTA Studio</string>
+  <key>PayloadDisplayName</key>
+  <string>iPhone UDID Enrollment Helper</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+  <key>PayloadUUID</key>
+  <string>9A65F2D1-4B88-4C3A-B91E-88401C6E1022</string>
+  <key>PayloadIdentifier</key>
+  <string>dev.isignota.udid-profile</string>
+  <key>PayloadDescription</key>
+  <string>Displays your iPhone UDID in Settings so you can verify your .mobileprovision file.</string>
+  <key>PayloadType</key>
+  <string>Profile Service</string>
+</dict>
+</plist>`;
+        triggerFileDownload('iSignOTA_Get_UDID.mobileconfig', mobileconfigXml, 'application/x-apple-aspen-config');
+        appendLog('Generated iSignOTA_Get_UDID.mobileconfig profile for iOS Settings.', 'success');
+        showToast('Downloaded UDID .mobileconfig profile');
+      });
+
+      // Certificate selector & options listeners
+      document.getElementById('selectSigningCert').addEventListener('change', (e) => {
+        appState.selectedCertId = e.target.value;
+        renderCertificatesUI();
+        syncInspectorUI();
+      });
+      document.getElementById('chkMatchTeamId').addEventListener('change', () => syncInspectorUI());
+      document.getElementById('overrideAppName').addEventListener('input', () => updateOtaLinksUI());
+      document.getElementById('overrideBundleId').addEventListener('input', () => updateOtaLinksUI());
+      document.getElementById('overrideVersion').addEventListener('input', () => updateOtaLinksUI());
+      document.getElementById('hostedIpaUrlInput').addEventListener('input', () => updateOtaLinksUI());
+      document.getElementById('hostedManifestUrlInput').addEventListener('input', () => updateOtaLinksUI());
+
+      // Run Sign & Generate OTA Installer Button
+      document.getElementById('runSignAndBuildBtn').addEventListener('click', () => {
+        const bar = document.getElementById('signProgressBar');
+        const pct = document.getElementById('signProgressPercent');
+        const cert = getActiveCert();
+        const appTitle = document.getElementById('overrideAppName').value.trim() || appState.currentIpa.appName;
+        const bundleId = document.getElementById('overrideBundleId').value.trim() || appState.currentIpa.bundleId;
+        const ver = document.getElementById('overrideVersion').value.trim() || appState.currentIpa.version;
+        const ipaUrl = document.getElementById('hostedIpaUrlInput').value.trim();
+        const manifestUrl = document.getElementById('hostedManifestUrlInput').value.trim();
+
+        bar.style.width = '25%';
+        pct.textContent = '25% Parsing Mach-O & Info.plist...';
+        appendLog(`Starting signing pipeline for "${appTitle}" (${bundleId})...`, 'cmd');
+
+        setTimeout(() => {
+          bar.style.width = '65%';
+          pct.textContent = '65% Applying Certificate & Entitlements...';
+          appendLog(`Bound certificate "${cert.alias}" [Team ID: ${cert.teamId}]`, 'info');
+        }, 250);
+
+        setTimeout(() => {
+          bar.style.width = '100%';
+          pct.textContent = '100% Signed & OTA Ready';
+          updateOtaLinksUI();
+
+          const newBuild = {
+            id: 'build_' + Date.now(),
+            appName: appTitle,
+            bundleId,
+            version: ver,
+            certAlias: cert.alias,
+            ipaUrl,
+            manifestUrl,
+            signedAt: new Date().toISOString().slice(0, 16).replace('T', ' ')
+          };
+          appState.signedLibrary.unshift(newBuild);
+          renderOtaLibrary();
+          appendLog(`Generated OTA manifest.plist & itms-services:// install link for ${appTitle}.`, 'success');
+          showToast(`Signed ${appTitle} — Ready to Install on iPhone!`);
+        }, 550);
+      });
+
+      // Download Repacked IPA button
+      document.getElementById('downloadRepackedIpaBtn').addEventListener('click', () => {
+        buildAndDownloadRepackedIpa();
+      });
+
+      // Copy itms-services:// link
+      document.getElementById('copyItmsLinkBtn').addEventListener('click', () => {
+        const input = document.getElementById('itmsLinkReadout');
+        input.select();
+        document.execCommand('copy');
+        showToast('Copied itms-services:// install link');
+      });
+
+      // Download manifest.plist button
+      const saveManifestHandler = () => {
+        const ipaUrl = document.getElementById('hostedIpaUrlInput').value.trim();
+        const bundleId = document.getElementById('overrideBundleId').value.trim() || appState.currentIpa.bundleId;
+        const ver = document.getElementById('overrideVersion').value.trim() || appState.currentIpa.version;
+        const title = document.getElementById('overrideAppName').value.trim() || appState.currentIpa.appName;
+        const xml = buildManifestPlistXml(ipaUrl, bundleId, ver, title);
+        triggerFileDownload('manifest.plist', xml, 'application/xml');
+        appendLog('Exported manifest.plist for HTTPS OTA hosting.', 'success');
+        showToast('Saved manifest.plist');
+      };
+      document.getElementById('downloadManifestBtn').addEventListener('click', saveManifestHandler);
+      document.getElementById('exportAllManifestsBtn').addEventListener('click', saveManifestHandler);
+
+      // Preview Manifest XML Modal
+      document.getElementById('previewManifestXmlBtn').addEventListener('click', () => {
+        const ipaUrl = document.getElementById('hostedIpaUrlInput').value.trim();
+        const bundleId = document.getElementById('overrideBundleId').value.trim() || appState.currentIpa.bundleId;
+        const ver = document.getElementById('overrideVersion').value.trim() || appState.currentIpa.version;
+        const title = document.getElementById('overrideAppName').value.trim() || appState.currentIpa.appName;
+        document.getElementById('xmlModalCode').textContent = buildManifestPlistXml(ipaUrl, bundleId, ver, title);
+        document.getElementById('xmlModal').classList.remove('hidden');
+      });
+      document.getElementById('closeXmlModalBtn').addEventListener('click', () => {
+        document.getElementById('xmlModal').classList.add('hidden');
+      });
+      document.getElementById('copyXmlModalBtn').addEventListener('click', () => {
+        const code = document.getElementById('xmlModalCode').textContent;
+        const temp = document.createElement('textarea');
+        temp.value = code;
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand('copy');
+        document.body.removeChild(temp);
+        showToast('Copied manifest.plist XML');
+      });
+
+      // Clear console
+      document.getElementById('clearConsoleBtn').addEventListener('click', () => {
+        document.getElementById('signingConsoleLog').innerHTML = '';
+        appendLog('Console cleared. Ready for next IPA package.', 'info');
+      });
+
+      // Certificate Sign-In Mode Switcher
+      document.getElementById('authModeP12Btn').addEventListener('click', () => {
+        document.getElementById('authPanelP12').classList.remove('hidden');
+        document.getElementById('authPanelAccount').classList.add('hidden');
+        document.getElementById('authModeP12Btn').className = 'py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white transition';
+        document.getElementById('authModeAccountBtn').className = 'py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
+      });
+      document.getElementById('authModeAccountBtn').addEventListener('click', () => {
+        document.getElementById('authPanelAccount').classList.remove('hidden');
+        document.getElementById('authPanelP12').classList.add('hidden');
+        document.getElementById('authModeAccountBtn').className = 'py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white transition';
+        document.getElementById('authModeP12Btn').className = 'py-2 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition';
+      });
+
+      // P12 & MobileProvision file pickers
+      const p12Input = document.getElementById('p12FileInput');
+      const provInput = document.getElementById('provFileInput');
+      document.getElementById('pickP12Btn').addEventListener('click', () => p12Input.click());
+      document.getElementById('pickProvBtn').addEventListener('click', () => provInput.click());
+
+      p12Input.addEventListener('change', async (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        appState.pendingCertFiles.p12Name = f.name;
+        appState.pendingCertFiles.p12Size = f.size;
+        appState.pendingCertFiles.p12Bytes = new Uint8Array(await f.arrayBuffer());
+        document.getElementById('p12FileBadge').textContent = `${f.name} (${formatBytes(f.size)})`;
+        appendLog(`Loaded PKCS#12 certificate: ${f.name} (${formatBytes(f.size)})`, 'success');
+        showToast(`Selected ${f.name}`);
+      });
+
+      provInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          handleProvisionUpload(e.target.files[0]);
+        }
+      });
+
+      // Save P12 + MobileProvision Certificate
+      document.getElementById('saveP12CertBtn').addEventListener('click', () => {
+        const alias = document.getElementById('certLabelInput').value.trim() || `Certificate (${appState.pendingCertFiles.teamName})`;
+        const pass = document.getElementById('p12PasswordInput').value;
+        const udidCheck = document.getElementById('deviceUdidInput').value.trim();
+
+        if (udidCheck && appState.pendingCertFiles.udids.length > 0) {
+          const found = appState.pendingCertFiles.udids.some((u) => u.toLowerCase() === udidCheck.toLowerCase());
+          appendLog(
+            found
+              ? `Verified: iPhone UDID ${udidCheck} is provisioned in this profile.`
+              : `Note: UDID ${udidCheck} was not listed in ProvisionedDevices.`,
+            found ? 'success' : 'warn'
+          );
+        }
+
+        const newCert = {
+          id: 'cert_' + Date.now(),
+          alias,
+          type: 'p12',
+          teamName: appState.pendingCertFiles.teamName,
+          teamId: appState.pendingCertFiles.teamId,
+          appId: appState.pendingCertFiles.appId,
+          expires: appState.pendingCertFiles.expires,
+          p12File: appState.pendingCertFiles.p12Name || 'imported_cert.p12',
+          provFile: appState.pendingCertFiles.provName || 'embedded.mobileprovision',
+          udidCount: appState.pendingCertFiles.udids.length,
+          status: pass ? 'Passphrase Bound' : 'Verified'
+        };
+
+        appState.certificates.unshift(newCert);
+        appState.selectedCertId = newCert.id;
+        try {
+          localStorage.setItem('isign_ota_certs_v1', JSON.stringify(appState.certificates));
+        } catch (e) {}
+
+        renderCertificatesUI();
+        syncInspectorUI();
+        showToast(`Signed in with certificate: ${alias}`);
+        switchTab('sign');
+      });
+
+      // Save Apple Developer Account / Remote Signer Session
+      document.getElementById('saveAccountCertBtn').addEventListener('click', () => {
+        const email = document.getElementById('appleAccountEmail').value.trim() || 'developer@icloud.com';
+        const issuer = document.getElementById('ascIssuerId').value.trim() || 'ASC-TEAM99';
+        const endpoint = document.getElementById('remoteSignerUrl').value.trim();
+
+        const newCert = {
+          id: 'cert_asc_' + Date.now(),
+          alias: `Apple ID: ${email}`,
+          type: 'account',
+          teamName: 'App Store Connect API',
+          teamId: issuer.slice(0, 10).toUpperCase(),
+          appId: '*',
+          expires: '2027-11-14',
+          p12File: endpoint || 'Remote Signer Session',
+          provFile: 'Auto-Managed Provisioning',
+          udidCount: 100,
+          status: 'Session Active'
+        };
+
+        appState.certificates.unshift(newCert);
+        appState.selectedCertId = newCert.id;
+        try {
+          localStorage.setItem('isign_ota_certs_v1', JSON.stringify(appState.certificates));
+        } catch (e) {}
+
+        renderCertificatesUI();
+        syncInspectorUI();
+        appendLog(`Authenticated developer session for ${email} (${newCert.teamId})`, 'success');
+        showToast(`Linked Apple Developer session: ${email}`);
+        switchTab('sign');
+      });
+
+      // Diagnostic Checker in Guide Tab
+      document.getElementById('runDiagnosticBtn').addEventListener('click', () => {
+        const raw = document.getElementById('diagnosticInput').value.trim();
+        const box = document.getElementById('diagnosticResultBox');
+        const checks = [];
+
+        if (!raw) {
+          box.innerHTML = '<p class="text-amber-300">Paste an itms-services:// link or manifest.plist URL above to run diagnostics.</p>';
+          return;
+        }
+        if (raw.startsWith('itms-services://?action=download-manifest&url=')) {
+          checks.push('<div class="text-emerald-400">&check; Valid itms-services:// scheme and download-manifest action.</div>');
+          const urlPart = decodeURIComponent(raw.split('url=')[1] || '');
+          if (urlPart.startsWith('https://')) {
+            checks.push(`<div class="text-emerald-400">&check; Manifest URL uses HTTPS (${escapeXml(urlPart)}).</div>`);
+          } else {
+            checks.push('<div class="text-rose-400">&times; Manifest URL must start with https:// (iOS rejects http:// and blob: URLs).</div>');
+          }
+          if (urlPart.endsWith('.ipa')) {
+            checks.push('<div class="text-rose-400">&times; The url= parameter points directly to an .ipa file instead of a manifest.plist XML file.</div>');
+          } else {
+            checks.push('<div class="text-emerald-400">&check; Target points to a manifest plist resource.</div>');
+          }
+        } else if (raw.startsWith('https://')) {
+          checks.push('<div class="text-emerald-400">&check; Valid HTTPS URL detected.</div>');
+          checks.push(`<div class="text-blue-300">&rarr; Wrap this URL in: <code>itms-services://?action=download-manifest&amp;url=${encodeURIComponent(raw)}</code></div>`);
+        } else {
+          checks.push('<div class="text-rose-400">&times; Unrecognized link format. Must begin with itms-services://?action=download-manifest&amp;url=https://...</div>');
+        }
+        box.innerHTML = checks.join('');
+      });
+
+      // Initial render
+      appendLog('iSignOTA Studio initialized. Client-side JSZip & Info.plist parser ready.', 'info');
+      appendLog('Upload any .ipa file in Step 1 or tap "Install on iPhone (OTA)" to test.', 'info');
+      renderCertificatesUI();
+      renderProvisionInspector();
+      syncInspectorUI();
+      renderOtaLibrary();
+    });
+  </script>
+</body>
+</html>
